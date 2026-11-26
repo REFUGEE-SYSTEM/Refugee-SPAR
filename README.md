@@ -29,3 +29,7 @@ To seed from a live read-only `refugee_registry_db` instead of `fixtures/demo-id
 - `./scripts/logs.sh [service]` — tail service logs
 - `./scripts/down.sh` — stop containers (preserves `refugee_spar_postgres_data`)
 - `./scripts/reset.sh [--yes]` — stop containers and delete `refugee_spar_*` volumes only
+
+## Resource Use & Timing (Cleancheck Verified)
+- **Warm-image `up.sh` time-to-ready**: ~`18s` (cleancheck Run 1); ~`2s` on re-run
+- **Memory (`docker stats --no-stream`)**: `~163.6 MiB` total (`spar-mapper-api` `69.54 MiB`, `spar-bene-api` `68.62 MiB`, `postgres` `25.46 MiB`)
