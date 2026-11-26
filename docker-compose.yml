@@ -1,0 +1,117 @@
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${SPAR_DB_USER:-sparuser}
+      POSTGRES_PASSWORD: ${SPAR_DB_PASSWORD}
+      POSTGRES_DB: ${SPAR_DB_NAME:-spardb}
+    ports:
+      - "${SPAR_POSTGRES_PORT:-5735}:5432"
+    volumes:
+      - refugee_spar_postgres_data:/var/lib/postgresql/data
+    networks:
+      - refugee_spar_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SPAR_DB_USER:-sparuser} -d ${SPAR_DB_NAME:-spardb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  spar-init:
+    build:
+      context: .
+      dockerfile: docker/spar-mapper-api/Dockerfile
+    profiles: ["bootstrap"]
+    environment:
+      SPAR_MAPPER_PARTNER_API_DB_DRIVER: postgresql+asyncpg
+      SPAR_MAPPER_PARTNER_API_DB_HOSTNAME: postgres
+      SPAR_MAPPER_PARTNER_API_DB_PORT: "5432"
+      SPAR_MAPPER_PARTNER_API_DB_USERNAME: ${SPAR_DB_USER:-sparuser}
+      SPAR_MAPPER_PARTNER_API_DB_PASSWORD: ${SPAR_DB_PASSWORD}
+      SPAR_MAPPER_PARTNER_API_DB_DBNAME: ${SPAR_DB_NAME:-spardb}
+      PGPASSWORD: ${SPAR_DB_PASSWORD}
+    volumes:
+      - ./docker/spar-init:/init:ro
+    networks:
+      - refugee_spar_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - sh
+      - -eu
+      - -c
+      - |
+        python3 /src/mapper-partner-api/main.py migrate
+        psql -v ON_ERROR_STOP=1 -h postgres -U "${SPAR_DB_USER:-sparuser}" -d "${SPAR_DB_NAME:-spardb}" -f /init/01-strategies.sql
+
+  spar-mapper-api:
+    build:
+      context: .
+      dockerfile: docker/spar-mapper-api/Dockerfile
+    restart: unless-stopped
+    environment:
+      SPAR_MAPPER_PARTNER_API_APP_PORT: "8000"
+      SPAR_MAPPER_PARTNER_API_APP_HOST: 0.0.0.0
+      SPAR_MAPPER_PARTNER_API_DB_DRIVER: postgresql+asyncpg
+      SPAR_MAPPER_PARTNER_API_DB_HOSTNAME: postgres
+      SPAR_MAPPER_PARTNER_API_DB_PORT: "5432"
+      SPAR_MAPPER_PARTNER_API_DB_USERNAME: ${SPAR_DB_USER:-sparuser}
+      SPAR_MAPPER_PARTNER_API_DB_PASSWORD: ${SPAR_DB_PASSWORD}
+      SPAR_MAPPER_PARTNER_API_DB_DBNAME: ${SPAR_DB_NAME:-spardb}
+      SPAR_MAPPER_PARTNER_API_JWT_AUTH_ENABLED: "false"
+      SPAR_MAPPER_PARTNER_API_CRYPTO_BACKEND: local
+      SPAR_MAPPER_PARTNER_API_AUTH_ENABLED: "false"
+      SPAR_MAPPER_PARTNER_API_OPENAPI_ROOT_PATH: /
+    ports:
+      - "${SPAR_MAPPER_PORT:-8390}:8000"
+    networks:
+      - refugee_spar_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ping >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  spar-bene-api:
+    build:
+      context: .
+      dockerfile: docker/spar-bene-api/Dockerfile
+    restart: unless-stopped
+    environment:
+      G2P_SPAR_BENE_PORTAL_API_APP_PORT: "8000"
+      G2P_SPAR_BENE_PORTAL_API_APP_HOST: 0.0.0.0
+      G2P_SPAR_BENE_PORTAL_API_DB_DRIVER: postgresql+asyncpg
+      G2P_SPAR_BENE_PORTAL_API_DB_HOSTNAME: postgres
+      G2P_SPAR_BENE_PORTAL_API_DB_PORT: "5432"
+      G2P_SPAR_BENE_PORTAL_API_DB_USERNAME: ${SPAR_DB_USER:-sparuser}
+      G2P_SPAR_BENE_PORTAL_API_DB_PASSWORD: ${SPAR_DB_PASSWORD}
+      G2P_SPAR_BENE_PORTAL_API_DB_DBNAME: ${SPAR_DB_NAME:-spardb}
+      G2P_SPAR_BENE_PORTAL_API_AUTH_ENABLED: "false"
+      G2P_SPAR_BENE_PORTAL_API_OPENAPI_ROOT_PATH: /
+    ports:
+      - "${SPAR_BENE_PORT:-8391}:8000"
+    networks:
+      - refugee_spar_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ping >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+volumes:
+  refugee_spar_postgres_data:
+
+networks:
+  refugee_spar_net:
+    driver: bridge
